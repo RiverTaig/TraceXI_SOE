@@ -1,0 +1,8 @@
+C:\TraceXI\TraceXI_SOE\bin\Debug\TraceXI_SOE.dll
+C:\TraceXI\TraceXI_SOE\bin\Debug\TraceXI_SOE.pdb
+C:\TraceXI\TraceXI_SOE\bin\Debug\Newtonsoft.Json.dll
+C:\TraceXI\TraceXI_SOE\bin\Debug\Newtonsoft.Json.xml
+C:\TraceXI\TraceXI_SOE\obj\Debug\TraceXI_SOE.dll
+C:\TraceXI\TraceXI_SOE\obj\Debug\TraceXI_SOE.pdb
+C:\TraceXI\TraceXI_SOE\obj\Debug\TraceXI_SOE.csprojResolveAssemblyReference.cache
+C:\TraceXI\TraceXI_SOE\bin\Debug\TraceXI_SOE.soe
