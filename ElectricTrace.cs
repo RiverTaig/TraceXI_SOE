@@ -24,6 +24,7 @@ namespace TraceXI_SOE
 
         private static IGeometricNetwork _geomNet = null;
         IWorkspace _workspace = null;
+
         public byte[] ElectricTraceResult(IWorkspace ws,  Dictionary<string, object> inputParams, Dictionary<int,string> layerDict)
         {
             _workspace = ws;
@@ -85,6 +86,7 @@ namespace TraceXI_SOE
 
             try
             {
+                List<double> traceExtent = new List<double> { double.MaxValue, double.MaxValue, double.MinValue, double.MinValue };
                 IGeometricNetwork geomNet;
                 DateTime dtStart;
                 INetElements netEl;
@@ -143,7 +145,7 @@ namespace TraceXI_SOE
                                         Dictionary<int, string> fieldNameDict = new Dictionary<int, string>();
                                         WriteFields(writer, feClass, ref fieldNameDict, fieldsToGetHash, traceResultsWriter, traceResultsID);
                                         WriteFeatures(writer, feClass, oidsToGet, fieldNameDict, fieldsToGetHash,
-                                            inputParams["geometriesToRetrieve"].ToString(), traceResultsWriter, traceResultsID);
+                                            inputParams["geometriesToRetrieve"].ToString(), traceResultsWriter, traceResultsID, ref traceExtent);
                                     }
                                     if (traceResultsID > 0)
                                     {
@@ -164,6 +166,19 @@ namespace TraceXI_SOE
                             }
                         }
                         writer.WriteEndArray();
+
+                        writer.WritePropertyName("traceExtent");
+                        writer.WriteStartObject();
+                            writer.WritePropertyName("xmin");
+                            writer.WriteValue(traceExtent[0]);
+                            writer.WritePropertyName("ymin");
+                            writer.WriteValue(traceExtent[1]);
+                            writer.WritePropertyName("xmax");
+                            writer.WriteValue(traceExtent[2]);
+                            writer.WritePropertyName("ymax");
+                            writer.WriteValue(traceExtent[3]);
+                        writer.WriteEndObject();
+
                         writer.WritePropertyName("endTime");
                         writer.WriteValue(DateTime.Now.ToString());
                     }
@@ -193,6 +208,7 @@ namespace TraceXI_SOE
             for (int i = 0; i < fieldsToGetList.Count; i++)
             {
                 fieldsToGetHash.Add(fieldsToGetList[i].ToUpper());
+                //File.AppendAllText(@"C:\inetpub\wwwroot\TraceResults\Debug.txt", "Field to get: " + fieldsToGetList[i].ToUpper());
             }
         }
 
@@ -206,8 +222,10 @@ namespace TraceXI_SOE
             feClassName = feClassName.Substring(1 + feClassName.LastIndexOf("."));
             if (fieldsToGetHash.Any(x => x.Contains(feClassName)))
             {
+                //File.AppendAllText(@"C:\inetpub\wwwroot\TraceResults\Debug.txt"  , feClassName + " will be processed");
                 return true;
             }
+            //File.AppendAllText(@"C:\inetpub\wwwroot\TraceResults\Debug.txt", feClassName + " will NOT be processed");
             return false;
         }
 
@@ -247,7 +265,8 @@ namespace TraceXI_SOE
                 startEID = GetStartEID(startPoint, geomNet, Convert.ToInt16(inputParams["tolerance"]));
             }
             //propSet.GetAllProperties(out names, out values1);
-            Miner.Interop.SetOfPhases phaseToTrace = GetPhasesToTraceOn(inputParams);
+            string phasesToTrace = inputParams["phasesToTrace"].ToString().ToUpper();
+            Miner.Interop.SetOfPhases phaseToTrace = GetPhasesToTraceOn(phasesToTrace);
 
             netEl = (INetElements)geomNet.Network;
             INetwork network = (INetwork)geomNet.Network;
@@ -268,7 +287,7 @@ namespace TraceXI_SOE
                 null, //Implementation of IMMCurrentStatus (no code in this case)
                 startEID, //EID of start features
                 esriElementType.esriETEdge, //Type of feature
-                phaseToTrace, //Phases to trace on 
+                SetOfPhases.abc, //Phases to trace on 
                 mmDirectionInfo.establishBySourceSearch, //How to find source
                 0, //Upstream neighbor (not used here)
                 esriElementType.esriETNone, //Upstream neighbor type (not used here)
@@ -278,14 +297,15 @@ namespace TraceXI_SOE
                 out tracedJunctions, //Resultant junctions
                 out tracedEdges); //Resultant edges
 
-            edgeEnum = NetworkHelper.GetEnumNetEID(network, tracedEdges, esriElementType.esriETEdge);
-            juncEnum = NetworkHelper.GetEnumNetEID(network, tracedJunctions, esriElementType.esriETJunction);
+
+            edgeEnum = NetworkHelper.GetEnumNetEID(network, tracedEdges, esriElementType.esriETEdge,  phasesToTrace);
+            juncEnum = NetworkHelper.GetEnumNetEID(network, tracedJunctions, esriElementType.esriETJunction, phasesToTrace);
             return startPoint;
         }
 
-        private static SetOfPhases GetPhasesToTraceOn(Dictionary<string, object> inputParams)
+        private static SetOfPhases GetPhasesToTraceOn(string phasesToTrace)
         {
-            string phasesToTrace = inputParams["phasesToTrace"].ToString().ToUpper();
+            //string phasesToTrace = inputParams["phasesToTrace"].ToString().ToUpper();
             Miner.Interop.SetOfPhases phaseToTrace = SetOfPhases.abc;
             switch (phasesToTrace)
             {
@@ -308,9 +328,12 @@ namespace TraceXI_SOE
                     phaseToTrace = SetOfPhases.bc;
                     break;
                 case "ABC":
-                    phaseToTrace = SetOfPhases.abc;
+                    phaseToTrace = SetOfPhases.abc; //post process these for a backbone trace
                     break;
-                case "any":
+                case "ANY":
+                    phaseToTrace = SetOfPhases.abc; //no filtering
+                    break;
+                default:
                     phaseToTrace = SetOfPhases.abc;
                     break;
             }
@@ -318,7 +341,7 @@ namespace TraceXI_SOE
         }
 
         private static void WriteFeatures(JsonWriter writer, IFeatureClass feClass, int[] oidsToGet,
-            Dictionary<int, string> fieldNameDict, HashSet<string> fieldsToGetList, string geometriesToReturn, JsonWriter traceResultsWriter, int traceResultsID)
+            Dictionary<int, string> fieldNameDict, HashSet<string> fieldsToGetList, string geometriesToReturn, JsonWriter traceResultsWriter, int traceResultsID, ref List<double> traceExtent)
         {
 
             JsonWriter writerToUse = traceResultsID > 0 ? traceResultsWriter : writer;
@@ -344,7 +367,7 @@ namespace TraceXI_SOE
                             writerToUse.WriteStartObject();
                             {
                                 WriteAttributes(writerToUse, feInTraceResults, fieldNameDict, fieldsToGetList);
-                                WriteGeometry(writerToUse, feInTraceResults, needsGeometry, traceResultsWriter, traceResultsID);
+                                WriteGeometry(writerToUse, feInTraceResults, needsGeometry, traceResultsWriter, traceResultsID,ref traceExtent);
                             }
                             writerToUse.WriteEndObject();
                             feInTraceResults = feCur.NextFeature();
@@ -358,8 +381,8 @@ namespace TraceXI_SOE
                 Marshal.FinalReleaseComObject(feCur);
             }
         }
-
-        private static void WriteGeometry(JsonWriter writer, IFeature feInTraceResults, bool needsGeometry, JsonWriter traceResultsWriter, int traceResultsID)
+        
+        private static void WriteGeometry(JsonWriter writer, IFeature feInTraceResults, bool needsGeometry, JsonWriter traceResultsWriter, int traceResultsID, ref List<double> traceExtent)
         {
 
             JsonWriter writerToUse = traceResultsID > 0 ? traceResultsWriter : writer;
@@ -375,12 +398,16 @@ namespace TraceXI_SOE
                             IPoint pnt = (IPoint)feInTraceResults.Shape;
                             string x = Math.Round(pnt.X, 2).ToString();
                             string y = Math.Round(pnt.Y, 2).ToString();
+                            if (pnt.X < traceExtent[0]) { traceExtent[0] = pnt.X; }
+                            if (pnt.X > traceExtent[2]) { traceExtent[2] = pnt.X; }
+                            if (pnt.Y < traceExtent[1]) { traceExtent[1] = pnt.Y; }
+                            if (pnt.Y > traceExtent[3]) { traceExtent[3] = pnt.Y; }
                             writerToUse.WritePropertyName("x"); writerToUse.WriteRawValue(x);
                             writerToUse.WritePropertyName("y"); writerToUse.WriteRawValue(y);
                         }
                         else
                         {
-                            WritePaths(writer, feInTraceResults, traceResultsWriter, traceResultsID);
+                            WritePaths(writer, feInTraceResults, traceResultsWriter, traceResultsID,ref traceExtent);
                         }
                     }
                 }
@@ -388,7 +415,7 @@ namespace TraceXI_SOE
             }
         }
 
-        private static void WritePaths(JsonWriter writer, IFeature feInTraceResults, JsonWriter traceResultsWriter, int traceResultsID)
+        private static void WritePaths(JsonWriter writer, IFeature feInTraceResults, JsonWriter traceResultsWriter, int traceResultsID,ref List<double> traceExtent)
         {
 
             JsonWriter writerToUse = traceResultsID > 0 ? traceResultsWriter : writer;
@@ -406,6 +433,10 @@ namespace TraceXI_SOE
                         writerToUse.WriteStartArray(); //Vertex on line
                         {
                             IPoint currentPoint = pointCol.get_Point(i);
+                            if (currentPoint.X < traceExtent[0]) { traceExtent[0] = currentPoint.X; }
+                            if (currentPoint.X > traceExtent[2]) { traceExtent[2] = currentPoint.X; }
+                            if (currentPoint.Y < traceExtent[1]) { traceExtent[1] = currentPoint.Y; }
+                            if (currentPoint.Y > traceExtent[3]) { traceExtent[3] = currentPoint.Y; }
                             string x = Math.Round(currentPoint.X, 2).ToString();
                             string y = Math.Round(currentPoint.Y, 2).ToString();
                             writerToUse.WriteRaw(x + "," + y);

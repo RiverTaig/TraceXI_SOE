@@ -97,7 +97,7 @@ namespace TraceXI_SOE
             }
         }
 
-        public static IEnumNetEID GetEnumNetEID(INetwork network, IMMTracedElements mmTracedElems, esriElementType elemType)
+        public static IEnumNetEID GetEnumNetEID(INetwork network, IMMTracedElements mmTracedElems, esriElementType elemType,string requestedPhase )
         {
             ReleaseCOMReferences relComRef = new ReleaseCOMReferences();
             try
@@ -107,21 +107,70 @@ namespace TraceXI_SOE
                 relComRef.RegisterForRelease(enumEIDBuilder);
                 enumEIDBuilder.Network = network;
                 enumEIDBuilder.ElementType = elemType;
+                bool abcOnly = false;
+                bool aOnly = false; bool bOnly = false; bool cOnly = false;
+                if (requestedPhase == "ABC")
+                {
+                    abcOnly = true;
+                }
+                if (requestedPhase == "A")
+                {
+                    aOnly = true;
+                }
+                if (requestedPhase == "B")
+                {
+                    bOnly = true;
+                }
+                if (requestedPhase == "C")
+                {
+                    cOnly = true;
+                }
                 for (int i = 0; i < mmTracedElems.Count; i++)
                 {
                     IMMTracedElement mmTracedEl = mmTracedElems.Next();
-                    enumEIDBuilder.Add(mmTracedEl.EID);
+                    if (abcOnly)
+                    {
+                        SetOfPhases phaseToLookFor = SetOfPhases.abc;
+                        AddIfOfCorrectPhase(enumEIDBuilder, mmTracedEl, phaseToLookFor);
+                    }
+                    else if (aOnly)
+                    {
+                        SetOfPhases phaseToLookFor = SetOfPhases.a;
+                        AddIfOfCorrectPhase(enumEIDBuilder, mmTracedEl, phaseToLookFor);
+                    }
+                    else if (bOnly)
+                    {
+                        SetOfPhases phaseToLookFor = SetOfPhases.b;
+                        AddIfOfCorrectPhase(enumEIDBuilder, mmTracedEl, phaseToLookFor);
+                    }
+                    else if (cOnly)
+                    {
+                        SetOfPhases phaseToLookFor = SetOfPhases.c;
+                        AddIfOfCorrectPhase(enumEIDBuilder, mmTracedEl, phaseToLookFor);
+                    }
+                    else
+                    {
+                        enumEIDBuilder.Add(mmTracedEl.EID);
+                    }
                 }
-                return (IEnumNetEID)enumEIDBuilder;
-            }
-            catch 
+                    return (IEnumNetEID)enumEIDBuilder;
+                }
+                catch 
+                {
+                    //_log.Error(ex.Message, ex);
+                    return null;
+                }
+                finally
+                {
+                    relComRef.Release();
+                }
+        }
+
+        private static void AddIfOfCorrectPhase(IEnumNetEIDBuilder enumEIDBuilder, IMMTracedElement mmTracedEl, SetOfPhases phaseToLookFor)
+        {
+            if (mmTracedEl.EnergizedPhases == phaseToLookFor)
             {
-                //_log.Error(ex.Message, ex);
-                return null;
-            }
-            finally
-            {
-                relComRef.Release();
+                enumEIDBuilder.Add(mmTracedEl.EID);
             }
         }
 
